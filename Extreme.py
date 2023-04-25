@@ -1,3 +1,4 @@
+
 """ Packages import """
 import numpy as np
 import arms
@@ -7,6 +8,15 @@ from utils import rd_argmax
 from utils import Chernoff_Interval, get_leader_qomax, second_order_Pareto_UCB
 from tracker import TrackerMax
 from bisect import bisect
+from itertools import combinations
+import gc
+import time
+from itertools import count
+from multiprocessing import Process
+from func_timeout import func_timeout, FunctionTimedOut
+import signal
+
+gc.collect()
 
 mapping = {
     'B': arms.ArmBernoulli,
@@ -23,7 +33,8 @@ mapping = {
     'Par': arms.ArmPareto,
     'TG': arms.ArmTG,
     'U': arms.ArmUniform,
-    'Mixture': arms.ArmMixture
+    'Mixture': arms.ArmMixture,
+    'st' : arms.ArmStudent
     }
 
 
@@ -75,7 +86,21 @@ class GenericMAB:
         all_maxima = np.zeros(N)
         alg = self.__getattribute__(method)
         for i in tqdm(range(N), desc='Computing ' + str(N) + ' simulations'):
-            tr = alg(T, **param_dic)
+            # def signal_handler(signum, frame):
+            #     raise Exception("Timed out!")
+
+            # signal.signal(signal.SIGALRM, signal_handler)
+            # signal.alarm(60)   # Ten seconds
+            # try:
+            #     tr = alg(T ,**param_dic)
+            # except Exception:
+            #     print("exception handled")
+            #     continue
+            tr = alg(T ,**param_dic)
+            # tqdm.write('Processing item: {}'.format(i), mininterval=1)
+            # time.sleep(2)  
+            
+            
             mc_count += tr.Na/N
             
             all_counts[i] = tr.Na
@@ -181,7 +206,7 @@ class GenericMAB:
                 nb_pulls = min(T-t, steps)
                 for _ in range(nb_pulls):
                     tr.update(t, arm, self.MAB[arm].sample()[0])
-                    t += 1
+                    t += 1  
         return tr
 
     def ExtremeETC(self, T, b=100, D=1e-4, E=1e-4, delta=0.1, N=None, r=None):
@@ -211,6 +236,85 @@ class GenericMAB:
         return self.ETC(T, size, f)
 
     def MaxMedian(self, T, explo_func):
+        """
+        :param T: Time Horizon
+        :param explo_func: Forced exploration function
+        :return: Tracker object with the results of the run
+        """
+        tr = TrackerMax(self.nb_arms, T, store_sorted_rewards_arm=True)
+        t = 0
+        while t < self.nb_arms:
+            tr.update(t, t, self.MAB[t].sample()[0])
+            t += 1
+        while t < T:
+            if np.random.binomial(1, explo_func(t)) == 1:
+                k = np.random.randint(self.nb_arms)
+            else:
+                m = tr.Na.min()
+                h = (self.nb_arms)*m**(0.75)*math.log(m) + 1
+                # h = (self.nb_arms)*m**(0.8)
+                orders = np.ceil(tr.Na/h).astype(np.int32)
+                idx = [tr.sorted_rewards_arm[i][-orders[i]] for i in range(self.nb_arms)]
+                k = rd_argmax(np.array(idx))
+            reward = self.MAB[k].sample()[0]
+            tr.update(t, k, reward)
+            t += 1
+        return tr
+
+    # def MaxMedian(self, T, explo_func, q):
+    #     """
+    #     :param T: Time Horizon
+    #     :param explo_func: Forced exploration function
+    #     :param q: Quantile used 
+    #     :return: Tracker object with the results of the run
+    #     """
+    #     tr = TrackerMax(self.nb_arms, T, store_sorted_rewards_arm=True)
+    #     t = 0
+    #     while t < self.nb_arms:
+    #         tr.update(t, t, self.MAB[t].sample()[0])
+    #         t += 1
+    #     while t < T: 
+    #         if np.random.binomial(1, explo_func(t)) == 1: 
+    #             k = np.random.randint(self.nb_arms)
+    #         else:
+    #             idx = []
+    #             m = tr.Na.min()
+    #             h = m
+    #             # h = (self.nb_arms)*m**(0.75)*math.log(m) + 1  # this is h(m(t)) (MOLLIFIER)
+    #             # do for every arm
+    #             for arm in range(self.nb_arms):
+    #                 X_hat_arm = []
+    #                 # for time_steps in tr.H: 
+    #                 time_steps = tr.H[arm]
+    #                 # iterate over all the subsets of size h of for each arm 
+    #                 for times in list(combinations(time_steps, np.ceil(h).astype(np.int32))):
+    #                     # find the maximum reward among all these subsets 
+    #                     maximum = -np.inf
+    #                     for time in times:
+    #                         if (tr.rewards_arm_t[arm][time] > maximum):
+    #                             maximum = tr.rewards_arm_t[arm][time]
+    #                     X_hat_arm.append(maximum)
+    #                 # print(X_hat_arm)
+                    
+    #                 # take the median of all the maximum rewards
+    #                 # idx.append(np.median(X_hat_arm))
+    #                 if (np.any(X_hat_arm)):
+    #                     # print(X_hat_arm)
+    #                     idx.append(np.quantile(X_hat_arm, q))
+    #             if (np.any(idx)):
+    #                 k = rd_argmax(np.array(idx))
+    #             else:
+    #                 t += 1
+    #                 print("this is the issue")
+    #                 continue
+    #             # print("\n\n\n The arm chosen at time step ", t , ":" , k)
+    #             # print("\n\nFor the next time step\n\n")
+    #         reward = self.MAB[k].sample()[0]
+    #         tr.update(t, k, reward)
+    #         t += 1
+    #     return tr
+    
+    def MaxMedianETC(self, T, explo_func):
         """
         :param T: Time Horizon
         :param explo_func: Forced exploration function
