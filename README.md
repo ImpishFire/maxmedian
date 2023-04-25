@@ -1,4 +1,4 @@
-#EE5111: Estimation Theory - Course project
+# EE5111: Estimation Theory - Course project
 This repository contains our experiments for extreme bandits using robust statistics.
 
 Contains code from official repository of Efficient Algorithm for Extreme Bandits.
