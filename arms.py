@@ -40,6 +40,25 @@ class ArmBernoulli(AbstractArm):
         return (self.local_random.rand(size) < self.p) * 1.
 
 
+class ArmStudent(AbstractArm):
+    def __init__(self, d, random_state=0):
+        """
+        :param p: float, mean parameter
+        :param random_state: int, seed to make experiments reproducible
+        """
+        self.d = d
+        super(ArmStudent, self).__init__(mean=0,
+                                           variance=d,
+                                           random_state=random_state
+                                           )
+
+    def sample(self, size=1):
+        """
+        Sampling strategy
+        :return: float, a sample from the arm
+        """
+        return (self.local_random.standard_t(self.d, size)) * 1.
+    
 class ArmBeta(AbstractArm):
     def __init__(self, a, b, random_state=0):
         """
@@ -403,5 +422,6 @@ mapping = {
     'Par': ArmPareto,
     'TG': ArmTG,
     'U': ArmUniform,
-    'GenNorm': ArmGenNorm
+    'GenNorm': ArmGenNorm,
+    'st' : ArmStudent
 }
